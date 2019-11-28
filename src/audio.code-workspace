@@ -1,0 +1,24 @@
+{
+	"folders": [
+		{
+			"name": "audio",
+			"path": "/Users/matt/Documents/PlatformIO/Projects/audio"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"random": "cpp",
+			"limits": "cpp",
+			"*.tcc": "cpp",
+			"array": "cpp",
+			"string": "cpp",
+			"cmath": "cpp",
+			"tuning_parameters.h": "c",
+			"system_error": "cpp",
+			"initializer_list": "cpp",
+			"utility": "cpp",
+			"ostream": "cpp",
+			"config.h": "c"
+		}
+	}
+}
