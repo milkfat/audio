@@ -34,7 +34,15 @@ volatile int current_opus_sequence = 0;
 volatile uint32_t out_of_order = 0;
 volatile uint16_t sequence_max = 0;
 volatile uint16_t packet_per_second = 0;
+volatile uint16_t udp_checks_per_second = 0;
 volatile uint32_t pcm_bytes_written = 0;
+
+volatile uint32_t debug_time = 0;
+volatile uint32_t debug_millis = 0;
+
+
+volatile uint8_t udp_buffer_available = 0;
+uint8_t udp_buffer_available_old = 0;
 
 uint32_t udp_loop_time = 0;
 uint32_t udp_loop_cnt = 0;
@@ -47,7 +55,7 @@ uint32_t i2s_task_cnt = 0;
 uint32_t i2s_write_breaks = 0;
 uint32_t pcm_sample_loop = 0;
 
-int good_cnt = 0;
+volatile int good_cnt = 0;
 int bad_cnt = 0;
 int offset = 0;
 
@@ -63,20 +71,23 @@ void opus_setup() {
 void decode_opus_loop() {
 
     static int samples_this_frame = 480; //default to 10ms frame, 480 samples
-    if (sequence_max - current_opus_sequence > 3) {
+    if (sequence_max - current_opus_sequence > 8) {
         current_opus_sequence++;
-        Serial.print("BLIP!");
+        Serial.print("B");
     }
-    // if (offset < 0 && good_cnt > 20) {
-    //     offset++;
-    //     good_cnt = 0;
-    //     Serial.print("+");
+    if (offset < 0 && good_cnt > 25) {
+        offset++;
+        good_cnt = 0;
+        Serial.print("+");
+    }
+    //if (bad_cnt > 2 && offset > -8) {
+    // if (udp_buffer_available > 2 && udp_buffer_available > udp_buffer_available_old) {
+    //     bad_cnt = 0;
+    //     //offset--;
+    //     offset = _min(-udp_buffer_available,offset);
+    //     Serial.print("-");
     // }
-    if (bad_cnt > 2 && offset > -50) {
-        bad_cnt = 0;
-        offset--;
-        Serial.print("-");
-    }
+    //udp_buffer_available_old = udp_buffer_available;
     int my_sequence = current_opus_sequence+offset;
     int my_buffer = (current_opus_sequence+offset)%NUM_OPUS_BUFFERS;
     int buffer_size = opus_buffer_size[my_buffer];
@@ -185,8 +196,8 @@ void opus_i2s_task(void *pvParameters)
 void opus_loop() {
 
 
-    if (opus_buffer_available > 50 && opus_decode_stopped) {
-        offset = -50;
+    if (opus_buffer_available > 2 && opus_decode_stopped) {
+        offset = 0;
         opus_decode_stopped = 0;
     }
 

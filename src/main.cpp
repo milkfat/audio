@@ -7,7 +7,6 @@ const char * password = "pastrylikesyou";
 
 #include "arduino.h"
 #include "driver/i2s.h"
-#include <FastLED.h>
 
 #include "filter.h"
 
@@ -41,12 +40,18 @@ void setup()
 {
 
     Serial.begin(115200);
+    Serial.println("Hello!");
     //mp3_setup();
-    opus_setup();
+    delay(1000);
 
+    WiFi.setSleep(false);
+    Serial.println("Sleep false");
+    delay(1000);
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
+    Serial.println("Starting WiFi");
     //WiFi.mode(WIFI_AP);
-    WiFi.setSleep(false); //disable power saving mode to speed up response times
+    //WiFi.setSleep(false); //disable power saving mode to speed up response times
     //WiFi.softAP(ssid, password);
     delay(500);
     WiFi.begin(ssid, password);
@@ -62,6 +67,7 @@ void setup()
     }
     Serial.println(WiFi.localIP());
 
+    opus_setup();
     i2s_setup();
     
     udp_listener_setup();
@@ -72,21 +78,21 @@ void setup()
     xTaskCreatePinnedToCore(
       opus_i2s_task, /* Function to implement the task */
       "i2s_task", /* Name of the task */
-      1000,  /* Stack size in bytes */
+      2000,  /* Stack size in bytes */
       NULL,  /* Task input parameter */
       1,  /* Priority of the task */
       &I2STask,  /* Task handle. */
-      0); /* Core where the task should run */
+      1); /* Core where the task should run */
 
-TaskHandle_t TCPTask;
-    xTaskCreatePinnedToCore(
-      opus_tcp_task, /* Function to implement the task */
-      "tcp_task", /* Name of the task */
-      4000,  /* Stack size in bytes */
-      NULL,  /* Task input parameter */
-      0,  /* Priority of the task */
-      &TCPTask,  /* Task handle. */
-      0); /* Core where the task should run */
+// TaskHandle_t TCPTask;
+//     xTaskCreatePinnedToCore(
+//       opus_tcp_task, /* Function to implement the task */
+//       "tcp_task", /* Name of the task */
+//       4000,  /* Stack size in bytes */
+//       NULL,  /* Task input parameter */
+//       0,  /* Priority of the task */
+//       &TCPTask,  /* Task handle. */
+//       0); /* Core where the task should run */
 
 
     TaskHandle_t LoopTask;
@@ -95,7 +101,7 @@ TaskHandle_t TCPTask;
       "loop_task", /* Name of the task */
       20000,  /* Stack size in bytes */
       NULL,  /* Task input parameter */
-      3,  /* Priority of the task */
+      1,  /* Priority of the task */
       &LoopTask,  /* Task handle. */
       1); /* Core where the task should run */
 
@@ -139,6 +145,12 @@ void myloop() {
       Serial.println(sequence_max);
       Serial.print("offset: ");
       Serial.println(offset);
+      Serial.print("max loop wait: ");
+      Serial.println(debug_millis);
+      Serial.print("packets/s: ");
+      Serial.println(packet_per_second);
+      debug_millis = 0;
+      udp_checks_per_second = 0;
       opus_buffer_max = 0;
       opus_buffer_min = 10000;
       udp_loop_time = 0;
@@ -172,13 +184,16 @@ void myloop() {
                 break;
         }
     }
-    udp_loop();
+    //udp_loop();
+    parse_udp_packets();
     static int cnt = 0;
 
 
     opus_loop();
 
 }
+
+
 void loop()
 {
     //mp3_loop();

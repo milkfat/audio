@@ -1,13 +1,22 @@
 
+#include "AsyncUDP.h"
 //AsyncUDP udp;
-//AsyncUDP udp2;
-WiFiUDP udp;
+AsyncUDP udp2;
+//WiFiUDP udp;
 
 int32_t udp_packet_cnt;
 
+#define NUM_UDP_BUFFERS 30
+#define UDP_BUFFER_SIZE 300
+uint8_t udp_buffers[NUM_UDP_BUFFERS][UDP_BUFFER_SIZE];
+int16_t udp_buffer_size[NUM_UDP_BUFFERS];
+uint8_t udp_buffer_read_position = 0;
+uint8_t udp_buffer_write_position = 0;
+//uint8_t udp_buffer_available = 0;
+
 void udp_listener_setup() {
 
-    udp.begin(4322);
+    //udp.begin(4322);
 
     //listen for RAW pcm packets
     // if(udp.listen(1234)) {
@@ -63,92 +72,99 @@ void udp_listener_setup() {
     //listen for opus data
     
 
-    // if(udp2.listen(1236)) {
-    //     Serial.print("UDP Listening on IP: ");
-    //     Serial.println(WiFi.localIP());
-    //     udp2.onPacket([](AsyncUDPPacket packet) {
-    //             //Serial.print("packet received");
-    //             //Serial.print(" ");
-    //             //Serial.write(packet.data(), packet.length());
-    //             uint16_t sequence = *(uint8_t*)(packet.data()+2)*256 + *(uint8_t*)(packet.data()+3);
-    //             packet_per_second++;
-    //             if (sequence > sequence_max) {
-    //                 sequence_max = sequence;
-    //             } else {
-    //                 out_of_order++;
-    //             }
-
-    //             int my_opus_buffer = sequence%NUM_OPUS_BUFFERS;
-    //             int my_previous_opus_buffer = (sequence-1)%NUM_OPUS_BUFFERS;
-    //             //Serial.print("sequence: ");
-    //             //Serial.println(sequence);
-    //             opus_buffer_size[my_opus_buffer] = packet.length()-12;
-                
-    //             memcpy8(&opus_buffer[my_opus_buffer], packet.data()+12, packet.length()-12);
-    //             //Serial.println(sequence);
-    //             opus_buffer_available++;
-    //             opus_buffer_read = _max(opus_buffer_read,my_previous_opus_buffer);
-    //     });
-    // }
+    if(udp2.listen(1236)) {
+        Serial.print("UDP Listening on IP: ");
+        Serial.println(WiFi.localIP());
+        udp2.onPacket([](AsyncUDPPacket packet) {
+            memcpy(&udp_buffers[udp_buffer_write_position], packet.data(), packet.length());
+            udp_buffer_size[udp_buffer_write_position] = packet.length();
+            udp_buffer_available++;
+            udp_buffer_write_position++;
+            udp_buffer_write_position%=NUM_UDP_BUFFERS;
+            packet_per_second++;
+        });
+    }
 
 
 
 }
 
 void udp_loop() {
-    int cnt = 3;
-    while (cnt--) {
 
-        int message = udp.parsePacket();
+    // int message = udp.parsePacket();
 
-        if (message) {
-            uint8_t header[12];
-            udp.read(header,12);
-            uint16_t sequence = header[2]*256 + header[3];
-            int my_opus_buffer = sequence%NUM_OPUS_BUFFERS;
+    // udp_checks_per_second++;
+    
+    // if (message) {
+    //     udp.read(udp_buffers[udp_buffer_write_position], message);
+    //     udp_buffer_size[udp_buffer_write_position] = message;
+    //     udp_buffer_available++;
+    //     udp_buffer_write_position++;
+    //     udp_buffer_write_position%=NUM_UDP_BUFFERS;
+    //     if (udp.available()) {
+    //         udp.flush();
+    //     }
+    // }
+
+}
+
+void parse_udp_packets() {
+    while (udp_buffer_available) {
+        udp_buffer_available--;
+        if(udp_buffer_size[udp_buffer_read_position] <= 12 || udp_buffer_size[udp_buffer_read_position] >= UDP_BUFFER_SIZE-12) {    
+            udp_buffer_size[udp_buffer_read_position] = 0;
+            udp_buffer_read_position++;
+            udp_buffer_read_position%=NUM_UDP_BUFFERS;
+            continue;
+        };
+        
+        uint16_t sequence = udp_buffers[udp_buffer_read_position][2]*256 + udp_buffers[udp_buffer_read_position][3];
+        int my_opus_buffer = sequence%NUM_OPUS_BUFFERS;
 
 
-            if (sequence > opus_buffer_sequence[my_opus_buffer]) { //write newer packets into the buffer
-                opus_buffer_size[my_opus_buffer] = message-12;
-                opus_buffer_sequence[my_opus_buffer] = sequence;
-                udp.read(opus_buffer[my_opus_buffer], message-12);
-                if (opus_buffer_available==0) {
-                    current_opus_sequence = sequence;
+        if (sequence > opus_buffer_sequence[my_opus_buffer]) { //write newer packets into the buffer
+            opus_buffer_size[my_opus_buffer] = udp_buffer_size[udp_buffer_read_position]-12;
+            opus_buffer_sequence[my_opus_buffer] = sequence;
+            memcpy(&(opus_buffer[my_opus_buffer]), &(udp_buffers[udp_buffer_read_position][12]), udp_buffer_size[udp_buffer_read_position]-12);
+
+            if (udp_buffer_available > 2) {
+                if (-udp_buffer_available < offset) {
+                    Serial.print("-");
                 }
-                opus_buffer_available++;
-            } else {
-                if (udp.available()) {
-                    udp.flush();
-                }
-                continue;
+                offset = _min(-udp_buffer_available,offset);
+                good_cnt = -40-udp_buffer_available;
             }
-            
-            if (udp.available()) {
-                udp.flush();
-            }
-
-            int sequence_diff = sequence - sequence_max;
-
-            if (sequence_diff > 1) {
-
-                sequence_max = sequence;
-
-            } else if (sequence_diff < -100) {
-                sequence_max = 0;
-                current_opus_sequence = 0;
-            }
-
-            //Serial.print("sequence: ");
-            //Serial.println(sequence);
-            //Serial.println(sequence);
-            if (opus_buffer_read == -1) {
-                opus_buffer_read = my_opus_buffer;
-            }
-
-            
-
+            // if (opus_buffer_available==0) {
+            //     current_opus_sequence = _max(sequence-4,current_opus_sequence);
+            // }
+            opus_buffer_available++;
         } else {
-            break;
+            udp_buffer_size[udp_buffer_read_position] = 0;
+            udp_buffer_read_position++;
+            udp_buffer_read_position%=NUM_UDP_BUFFERS;
+            continue;
         }
+        
+
+        int sequence_diff = sequence - sequence_max;
+
+        if (sequence_diff > 1) {
+
+            sequence_max = sequence;
+
+        } else if (sequence_diff < -100) {
+            sequence_max = 0;
+            current_opus_sequence = 0;
+        }
+
+        if (opus_buffer_read == -1) {
+            opus_buffer_read = my_opus_buffer;
+        }
+
+        udp_buffer_size[udp_buffer_read_position] = 0;
+        udp_buffer_read_position++;
+        udp_buffer_read_position%=NUM_UDP_BUFFERS;
+
     }
+
 }
