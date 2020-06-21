@@ -70,33 +70,43 @@ void opus_setup() {
 
 void decode_opus_loop() {
 
-    static int samples_this_frame = 480; //default to 10ms frame, 480 samples
-    if (sequence_max - current_opus_sequence > 8) {
-        current_opus_sequence++;
-        Serial.print("B");
-    }
-    if (offset < 0 && good_cnt > 25) {
-        offset++;
-        good_cnt = 0;
-        Serial.print("+");
-    }
-    //if (bad_cnt > 2 && offset > -8) {
-    // if (udp_buffer_available > 2 && udp_buffer_available > udp_buffer_available_old) {
-    //     bad_cnt = 0;
-    //     //offset--;
-    //     offset = _min(-udp_buffer_available,offset);
-    //     Serial.print("-");
-    // }
-    //udp_buffer_available_old = udp_buffer_available;
-    int my_sequence = current_opus_sequence+offset;
-    int my_buffer = (current_opus_sequence+offset)%NUM_OPUS_BUFFERS;
-    int buffer_size = opus_buffer_size[my_buffer];
-    //if ( (!opus_decode_stopped) && ( (!pcm_bytes_available) || (buffer_size && pcm_bytes_available<samples_this_frame*2) ) ) {
+
+        //default to 10ms frame, 480 samples
+        //this will be updated dynamically from incoming packets
+        static int samples_this_frame = 480;
+
+        //adjust forward if we fall behind
+        if (sequence_max - current_opus_sequence > 4) {
+            if (sequence_max - current_opus_sequence > 100) {
+                current_opus_sequence = sequence_max-6;
+            } else {
+                current_opus_sequence++;
+                Serial.print("B");
+            }
+        }
+        //slowly remove our offset (if any) if we have a good signal (no missed packets)
+        if (offset < 0 && good_cnt > 25) {
+            offset++;
+            good_cnt = 0;
+            Serial.print("+");
+        }
+        
     if ( (!opus_decode_stopped) && (!pcm_bytes_available) ) {
+
+        //this is our sequence number
+        int my_sequence = current_opus_sequence+offset;
+        //this is our Opus buffer location
+        int my_buffer = (current_opus_sequence+offset)%NUM_OPUS_BUFFERS;
+        //this is the size of the data to be processed
+        int buffer_size = opus_buffer_size[my_buffer];
+
+        //increment our sequence number for the next time 'round
         current_opus_sequence++;
         uint8_t *buffer_ptr = NULL;
 
+
         if (opus_buffer_sequence[my_buffer] < my_sequence) {
+            //don't process this packet, it's old
             static int zpc = 0;
             zpc++;
             zero_packet_count++;
@@ -111,12 +121,14 @@ void decode_opus_loop() {
             }
             buffer_size=0;
         } else {
+            //do process this packet
             good_cnt++;
             bad_cnt=0;
             zero_packet_count = 0;
             buffer_ptr = &opus_buffer[my_buffer][0];
         }
 
+        //get the number of samples that are in this packet
         if (buffer_size) {
             int samples_new_frame = opus_packet_get_nb_samples(buffer_ptr, buffer_size, 48000);
             if (samples_new_frame>0) {
@@ -126,6 +138,8 @@ void decode_opus_loop() {
                 return;
             }
         }
+
+        //decode the opus packet into raw PCM
         int samples = opus_decode(opusDecoder, buffer_ptr, buffer_size, &pcm[pcm_write_position], samples_this_frame, 0);
         if (samples > 0) {
             pcm_write_position+=samples*2;
@@ -134,6 +148,7 @@ void decode_opus_loop() {
             opus_error_cnt++;
         }
         
+        //check if we have reached the end of PCM memory
         if (pcm_write_position > PCM_BUFFER_SIZE-samples_this_frame*4) {
             pcm_max_byte = pcm_write_position*2;
             pcm_write_position = 0;
@@ -149,6 +164,7 @@ void opus_i2s_loop() {
     static uint32_t last_time = 0;
     static uint pcm_processed = 0;
     if (pcm_bytes_available>0) {
+        //we have PCM data available
         while (pcm_bytes_available>0) {
             pcm_processed = 1;
             pcm_sample_loop++;
@@ -158,7 +174,11 @@ void opus_i2s_loop() {
 
             uint32_t bytes_to_write = _min(pcm_bytes_available, pcm_max_byte - pcm_byte_position);
 
+            if (!i2s_ready && i2s_stopped) {
+                i2s_ready = 1;
+            }
 
+            //write PCM data to the i2s buffer
             int bytes_written = i2s_write_nb(&pcm_bytes[pcm_byte_position],bytes_to_write);
             //Serial.print(bytes_written);
             //Serial.print(" ");
@@ -169,9 +189,6 @@ void opus_i2s_loop() {
                 pcm_bytes_written+=bytes_written;
             }
 
-            if (!i2s_ready && i2s_stopped) {
-                i2s_ready = 1;
-            }
             
         } 
     } else {
@@ -214,7 +231,7 @@ void opus_loop() {
     if (!i2s_stopped && opus_decode_stopped && !pcm_bytes_available ) {
         i2s_stopped = 1;
         i2s_ready = 0;
-        i2s_stop((i2s_port_t)I2S_NUM);
+        //i2s_stop((i2s_port_t)I2S_NUM);
         i2s_zero_dma_buffer((i2s_port_t)I2S_NUM);
         opus_decoder_ctl(opusDecoder, OPUS_RESET_STATE);
         //Serial.print("S");
@@ -229,7 +246,7 @@ void opus_loop() {
 
     if (i2s_stopped && i2s_ready && opus_buffer_available > 0) {
         //Serial.print("s");
-        i2s_start((i2s_port_t)I2S_NUM);
+        //i2s_start((i2s_port_t)I2S_NUM);
         i2s_stopped = 0;
     }
 

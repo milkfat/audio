@@ -16,60 +16,7 @@ uint8_t udp_buffer_write_position = 0;
 
 void udp_listener_setup() {
 
-    //udp.begin(4322);
-
-    //listen for RAW pcm packets
-    // if(udp.listen(1234)) {
-    //     Serial.print("UDP Listening on IP: ");
-    //     Serial.println(WiFi.localIP());
-    //     udp.onPacket([](AsyncUDPPacket packet) {
-    //         //Serial.write(packet.data(), packet.length());
-    //         udp_packet_cnt++;
-    //         uint32_t * ptr = reinterpret_cast<uint32_t*>(packet.data());
-    //         static int buffer_position = 0;
-
-           
-    //         for (int i = 0; i < packet.length()/4; i++) {
-    //             memcpy8(&sbuffer[buffer_position], ptr, 4);
-    //             ptr++;
-    //             buffer_position++;
-    //             buffer_position %= SBUFFER_SIZE;
-    //             buffer_available++;
-    //         }
-
-    //         // if(buffer_available>1472) {
-    //         //     i2s_stop((i2s_port_t)I2S_NUM);
-    //         //     buffer_position+=1472;
-    //         //     buffer_position %= SBUFFER_SIZE;
-    //         //     buffer_available-=1472;
-    //         //     i2s_start((i2s_port_t)I2S_NUM);
-    //         // }
-    //     });
-    // }
-
-    // //listen for mp3 data
-    // if(udp2.listen(1235)) {
-    //     Serial.print("UDP Listening on IP: ");
-    //     Serial.println(WiFi.localIP());
-    //     udp2.onPacket([](AsyncUDPPacket packet) {
-    //         while (mp3_lock) {vTaskDelay(100);}
-    //         mp3_lock = 1;
-    //         //Serial.print("packet received");
-    //         //Serial.print(" ");
-    //         //Serial.write(packet.data(), packet.length());
-    //         if(mp3_buffer_write_position < 19000) {
-    //         memcpy8(&mp3_buffer[mp3_buffer_write_position], packet.data(), packet.length());
-    //         mp3_buffer_write_position+=packet.length();
-    //         mp3_buffer_available+=packet.length();
-    //         }
-    //         //Serial.println(mp3_buffer_available);
-    //         mp3_lock = 0;
-    //         udp_packet_cnt++;
-    //     });
-    // }
-
-
-    //listen for opus data
+    //listen for UDP packets and copy them to our UDP buffer for later processing
     
 
     if(udp2.listen(1236)) {
@@ -89,28 +36,11 @@ void udp_listener_setup() {
 
 }
 
-void udp_loop() {
-
-    // int message = udp.parsePacket();
-
-    // udp_checks_per_second++;
-    
-    // if (message) {
-    //     udp.read(udp_buffers[udp_buffer_write_position], message);
-    //     udp_buffer_size[udp_buffer_write_position] = message;
-    //     udp_buffer_available++;
-    //     udp_buffer_write_position++;
-    //     udp_buffer_write_position%=NUM_UDP_BUFFERS;
-    //     if (udp.available()) {
-    //         udp.flush();
-    //     }
-    // }
-
-}
-
+//process any available packets from the UDP buffer
 void parse_udp_packets() {
     while (udp_buffer_available) {
         udp_buffer_available--;
+        //check that our UDP packet is at least 12 bytes (opus header) and smaller than our buffer size
         if(udp_buffer_size[udp_buffer_read_position] <= 12 || udp_buffer_size[udp_buffer_read_position] >= UDP_BUFFER_SIZE-12) {    
             udp_buffer_size[udp_buffer_read_position] = 0;
             udp_buffer_read_position++;
@@ -118,27 +48,31 @@ void parse_udp_packets() {
             continue;
         };
         
+        //read the sequence number from the Opus header
         uint16_t sequence = udp_buffers[udp_buffer_read_position][2]*256 + udp_buffers[udp_buffer_read_position][3];
-        int my_opus_buffer = sequence%NUM_OPUS_BUFFERS;
 
+        //this is the destination buffer for this packet
+        int my_opus_buffer = sequence%NUM_OPUS_BUFFERS;
 
         if (sequence > opus_buffer_sequence[my_opus_buffer]) { //write newer packets into the buffer
             opus_buffer_size[my_opus_buffer] = udp_buffer_size[udp_buffer_read_position]-12;
             opus_buffer_sequence[my_opus_buffer] = sequence;
             memcpy(&(opus_buffer[my_opus_buffer]), &(udp_buffers[udp_buffer_read_position][12]), udp_buffer_size[udp_buffer_read_position]-12);
 
-            if (udp_buffer_available > 2) {
-                if (-udp_buffer_available < offset) {
-                    Serial.print("-");
-                }
-                offset = _min(-udp_buffer_available,offset);
-                good_cnt = -40-udp_buffer_available;
-            }
+            //error correcting stuff
+            // if (udp_buffer_available > 2) {
+            //     if (-udp_buffer_available < offset) {
+            //         Serial.print("-");
+            //     }
+            //     offset = _min(-udp_buffer_available,offset);
+            //     good_cnt = -40-udp_buffer_available;
+            // }
             // if (opus_buffer_available==0) {
-            //     current_opus_sequence = _max(sequence-4,current_opus_sequence);
+            //     current_opus_sequence = _m ax(sequence-4,current_opus_sequence);
             // }
             opus_buffer_available++;
         } else {
+            //this packet is old, let's ignore it
             udp_buffer_size[udp_buffer_read_position] = 0;
             udp_buffer_read_position++;
             udp_buffer_read_position%=NUM_UDP_BUFFERS;
@@ -157,10 +91,12 @@ void parse_udp_packets() {
             current_opus_sequence = 0;
         }
 
+        //set opus_buffer_read if needed
         if (opus_buffer_read == -1) {
             opus_buffer_read = my_opus_buffer;
         }
 
+        //clear this UDP buffer and increment the read position
         udp_buffer_size[udp_buffer_read_position] = 0;
         udp_buffer_read_position++;
         udp_buffer_read_position%=NUM_UDP_BUFFERS;

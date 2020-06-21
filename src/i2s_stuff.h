@@ -13,7 +13,7 @@ i2s_config_t i2s_config = {
      .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
      .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1, // high interrupt priority
      .dma_buf_count = 6,
-     .dma_buf_len = 80,   //Interrupt level 1
+     .dma_buf_len = 120,   //Interrupt level 1
      .use_apll = true
     };
     
@@ -27,14 +27,14 @@ i2s_pin_config_t pin_config = {
 /* write bytes to I2S */
 int i2s_write_nb(void * sample, uint32_t size){
   size_t bytes_written;
-  i2s_write((i2s_port_t)I2S_NUM, (const char *)sample, size, &bytes_written, 100);
+  i2s_write((i2s_port_t)I2S_NUM, (const char *)sample, size, &bytes_written, portMAX_DELAY);
   return bytes_written;
 }
 
 /* write sample to I2S */
 int i2s_write_sample_nb(uint32_t sample){
   size_t bytes_written;
-  return i2s_write((i2s_port_t)I2S_NUM, (const char *)&sample, 4, &bytes_written, 1);
+  return i2s_write((i2s_port_t)I2S_NUM, (const char *)&sample, 4, &bytes_written, portMAX_DELAY);
 }
 
 void i2s_setup() {
@@ -45,5 +45,7 @@ void i2s_setup() {
     //set sample rates of i2s to sample rate of wav file
     i2s_set_sample_rates((i2s_port_t)I2S_NUM, 48000); 
     
+    i2s_zero_dma_buffer((i2s_port_t)I2S_NUM);
+    i2s_start((i2s_port_t)I2S_NUM);
   //i2s_driver_uninstall((i2s_port_t)I2S_NUM); //stop & destroy i2s driver 
 }

@@ -80,7 +80,7 @@ void setup()
       "i2s_task", /* Name of the task */
       2000,  /* Stack size in bytes */
       NULL,  /* Task input parameter */
-      1,  /* Priority of the task */
+      2,  /* Priority of the task */
       &I2STask,  /* Task handle. */
       1); /* Core where the task should run */
 
@@ -148,13 +148,10 @@ void myloop() {
       Serial.print("max loop wait: ");
       Serial.println(debug_millis);
       Serial.print("packets/s: ");
-      Serial.println(packet_per_second);
       debug_millis = 0;
       udp_checks_per_second = 0;
       opus_buffer_max = 0;
       opus_buffer_min = 10000;
-      udp_loop_time = 0;
-      udp_loop_cnt = 0;
       opus_loop_time = 0;
       loop_task_time = 0;
       i2s_task_time = 0;
@@ -184,7 +181,6 @@ void myloop() {
                 break;
         }
     }
-    //udp_loop();
     parse_udp_packets();
     static int cnt = 0;
 
